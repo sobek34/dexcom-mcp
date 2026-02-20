@@ -1,47 +1,73 @@
 # Dexcom CGM MCP Server
 
-Serwer MCP odczytujący dane z glukometru ciągłego Dexcom (Dexcom One, G6, G7)
-przez **Dexcom Share API**.
+An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that reads real-time continuous glucose monitor (CGM) data from Dexcom sensors via the **Dexcom Share API**. Integrates with Claude Desktop, allowing Claude to read your glucose levels, trends, and statistics directly.
 
-## Wymagania
+Supports **Dexcom One, G6, G7** — both EU and US regions.
 
-- Python 3.11+
-- Konto Dexcom z włączoną funkcją **Share** w aplikacji mobilnej
-- Aktywny sensor CGM
+---
 
-## Instalacja
+## Requirements
+
+- Python 3.10+
+- A Dexcom account with **Share** enabled in the mobile app
+- An active CGM sensor
+
+## Installation
+
+### Option A — run directly from GitHub with `uvx` (no install needed)
 
 ```bash
-cd C:\Users\SebastianPokrywka\AI\Dexcom
-pip install -r requirements.txt
+uvx --from git+https://github.com/sobek34/dexcom-mcp.git dexcom-mcp
 ```
 
-## Konfiguracja
+### Option B — install with pip
 
-Ustaw zmienne środowiskowe przed uruchomieniem:
+```bash
+pip install git+https://github.com/sobek34/dexcom-mcp.git
+dexcom-mcp
+```
 
-| Zmienna           | Opis                                      | Domyślnie |
-|-------------------|-------------------------------------------|-----------|
-| `DEXCOM_USERNAME` | Nazwa konta Dexcom (e-mail lub login)     | wymagane  |
-| `DEXCOM_PASSWORD` | Hasło do konta Dexcom                     | wymagane  |
-| `DEXCOM_REGION`   | Region serwera: `EU` (Europa) lub `US`    | `EU`      |
+### Option C — clone and run locally
 
-> **Uwaga:** Dexcom One używa serwera EU (`shareous1.dexcom.com`).
-> Dexcom G6/G7 w USA używa serwera US (`share2.dexcom.com`).
+```bash
+git clone https://github.com/sobek34/dexcom-mcp.git
+cd dexcom-mcp
+pip install -r requirements.txt
+python server.py
+```
 
-## Konfiguracja w Claude Desktop
+---
 
-Dodaj do pliku `%APPDATA%\Claude\claude_desktop_config.json`:
+## Configuration
+
+Set these environment variables before running:
+
+| Variable           | Description                              | Default    |
+|--------------------|------------------------------------------|------------|
+| `DEXCOM_USERNAME`  | Dexcom account email / login             | *required* |
+| `DEXCOM_PASSWORD`  | Dexcom account password                  | *required* |
+| `DEXCOM_REGION`    | `EU` (Europe) or `US`                    | `EU`       |
+
+> **Note:** Dexcom One uses the EU server (`shareous1.dexcom.com`).
+> Dexcom G6/G7 in the US uses the US server (`share2.dexcom.com`).
+
+---
+
+## Claude Desktop Integration
+
+Add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+
+### With uvx (recommended — always uses latest version)
 
 ```json
 {
   "mcpServers": {
     "dexcom-cgm": {
-      "command": "python",
-      "args": ["C:\\Users\\SebastianPokrywka\\AI\\Dexcom\\server.py"],
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/sobek34/dexcom-mcp.git", "dexcom-mcp"],
       "env": {
-        "DEXCOM_USERNAME": "twoj@email.com",
-        "DEXCOM_PASSWORD": "twoje_haslo",
+        "DEXCOM_USERNAME": "your@email.com",
+        "DEXCOM_PASSWORD": "your_password",
         "DEXCOM_REGION": "EU"
       }
     }
@@ -49,60 +75,88 @@ Dodaj do pliku `%APPDATA%\Claude\claude_desktop_config.json`:
 }
 ```
 
-## Dostępne narzędzia MCP
+### With a local clone
+
+```json
+{
+  "mcpServers": {
+    "dexcom-cgm": {
+      "command": "python",
+      "args": ["/path/to/dexcom-mcp/server.py"],
+      "env": {
+        "DEXCOM_USERNAME": "your@email.com",
+        "DEXCOM_PASSWORD": "your_password",
+        "DEXCOM_REGION": "EU"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Available MCP Tools
 
 ### `get_current_glucose`
-Pobiera aktualny odczyt glukozy.
+Returns the latest glucose reading, trend arrow, and status.
 
-**Parametry:**
-- `unit` — `"mmol/L"` (domyślnie) lub `"mg/dL"`
+**Parameters:**
+- `unit` — `"mmol/L"` (default) or `"mg/dL"`
 
-**Przykład odpowiedzi:**
+**Example output:**
 ```
-Glukoza: 5.8 mmol/L →
-Trend: stabilny
-Status: W NORMIE
-Czas odczytu: 14:35 UTC
+Glucose: 5.8 mmol/L →
+Trend: stable
+Status: IN RANGE
+Reading time: 14:35 UTC
 ```
 
 ---
 
 ### `get_glucose_history`
-Pobiera historię odczytów z ostatnich X godzin.
+Returns readings for the last X hours (up to 24h), one every 5 minutes.
 
-**Parametry:**
-- `hours` — liczba godzin 1–24 (domyślnie 3)
-- `unit` — `"mmol/L"` lub `"mg/dL"`
+**Parameters:**
+- `hours` — 1–24 (default: 3)
+- `unit` — `"mmol/L"` or `"mg/dL"`
 
 ---
 
 ### `get_glucose_stats`
-Oblicza statystyki glukozy.
+Calculates statistics over a time window.
 
-**Parametry:**
-- `hours` — zakres czasowy 1–24h (domyślnie 24)
-- `low_threshold` — dolna granica TIR w mmol/L (domyślnie 3.9)
-- `high_threshold` — górna granica TIR w mmol/L (domyślnie 10.0)
+**Parameters:**
+- `hours` — 1–24 (default: 24)
+- `low_threshold` — lower TIR boundary in mmol/L (default: 3.9)
+- `high_threshold` — upper TIR boundary in mmol/L (default: 10.0)
 
-**Zwraca:** średnią, CV, TIR/TBR/TAR, szacowany HbA1c
+**Returns:** mean, standard deviation, CV, TIR / TBR / TAR, estimated HbA1c (ADAG formula)
 
 ---
 
 ### `check_alerts`
-Sprawdza zdarzenia hipoglikemii i hiperglikemii.
+Lists hypoglycemia and hyperglycemia events within a time window.
 
-**Parametry:**
-- `hours` — zakres czasowy 1–24h (domyślnie 24)
-- `low_alert` — próg hipoglikemii w mmol/L (domyślnie 3.9)
-- `high_alert` — próg hiperglikemii w mmol/L (domyślnie 10.0)
+**Parameters:**
+- `hours` — 1–24 (default: 24)
+- `low_alert` — hypo threshold in mmol/L (default: 3.9)
+- `high_alert` — hyper threshold in mmol/L (default: 10.0)
 
-## Jak włączyć Dexcom Share
+---
 
-1. Otwórz aplikację **Dexcom One** (lub G6/G7) na telefonie
-2. Przejdź do ustawień → **Share** → włącz udostępnianie
-3. Nie musisz dodawać obserwatora — wystarczy włączona funkcja Share
+## How to Enable Dexcom Share
 
-## Bezpieczeństwo
+1. Open the **Dexcom** app (One / G6 / G7) on your phone
+2. Go to **Settings → Share** and enable sharing
+3. You do **not** need to add a follower — just enabling Share is enough
 
-- Nigdy nie wpisuj hasła bezpośrednio w pliku — używaj zmiennych środowiskowych
-- To jest **nieoficjalne API** — może przestać działać po aktualizacji Dexcom
+---
+
+## Security
+
+- Never hardcode credentials — always use environment variables
+- This uses an **unofficial, undocumented API** — it may break after Dexcom app updates
+
+## Disclaimer
+
+This project is not affiliated with, endorsed by, or supported by Dexcom, Inc. Use at your own risk. Do not make medical decisions based solely on data returned by this tool.
