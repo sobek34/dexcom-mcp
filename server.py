@@ -88,7 +88,13 @@ class DexcomShareClient:
             )
             response.raise_for_status()
             # API zwraca string w cudzysłowie: "\"abc123\""
-            self.session_id = response.json()
+            try:
+                self.session_id = response.json()
+            except Exception:
+                raise ValueError(
+                    f"Dexcom login zwrocil nieprawidlowa odpowiedz "
+                    f"(HTTP {response.status_code}): {response.text[:300] or '(pusta odpowiedz)'}"
+                )
             if isinstance(self.session_id, str):
                 self.session_id = self.session_id.strip('"')
             return self.session_id
