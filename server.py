@@ -121,6 +121,9 @@ class DexcomShareClient:
                 response = await client.post(url, params=params, timeout=15)
 
             response.raise_for_status()
+            text = response.text.strip()
+            if not text:
+                return []
             return response.json()
 
 
@@ -437,7 +440,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             return [types.TextContent(type="text", text=f"Nieznane narzedzie: {name}")]
 
     except ValueError as e:
-        return [types.TextContent(type="text", text=f"Blad konfiguracji: {e}")]
+        msg = str(e)
+        if "Brak danych" in msg or "Brak" in msg:
+            return [types.TextContent(type="text", text=f"Blad konfiguracji: {e}")]
+        return [types.TextContent(type="text", text=f"Blad parsowania odpowiedzi API: {e}")]
     except httpx.HTTPStatusError as e:
         return [
             types.TextContent(
