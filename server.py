@@ -19,29 +19,27 @@ DEXCOM_US_BASE_URL = "https://share2.dexcom.com/ShareWebServices/Services"
 DEXCOM_EU_BASE_URL = "https://shareous1.dexcom.com/ShareWebServices/Services"
 
 TREND_ARROWS = {
-    0: "→",
-    1: "↑↑",
-    2: "↑",
-    3: "↗",
-    4: "→",
-    5: "↘",
-    6: "↓",
-    7: "↓↓",
-    8: "?",
-    9: "⚠",
+    # integers (stary format)
+    0: "→", 1: "↑↑", 2: "↑", 3: "↗", 4: "→",
+    5: "↘", 6: "↓", 7: "↓↓", 8: "?", 9: "⚠",
+    # strings (nowy format)
+    "None": "→", "DoubleUp": "↑↑", "SingleUp": "↑",
+    "FortyFiveUp": "↗", "Flat": "→", "FortyFiveDown": "↘",
+    "SingleDown": "↓", "DoubleDown": "↓↓",
+    "NotComputable": "?", "RateOutOfRange": "⚠",
 }
 
 TREND_NAMES = {
-    0: "brak",
-    1: "szybko rośnie",
-    2: "rośnie",
-    3: "lekko rośnie",
-    4: "stabilny",
-    5: "lekko spada",
-    6: "spada",
-    7: "szybko spada",
-    8: "nie można obliczyć",
-    9: "poza zakresem",
+    # integers (stary format)
+    0: "brak", 1: "szybko rośnie", 2: "rośnie", 3: "lekko rośnie",
+    4: "stabilny", 5: "lekko spada", 6: "spada", 7: "szybko spada",
+    8: "nie można obliczyć", 9: "poza zakresem",
+    # strings (nowy format)
+    "None": "brak", "DoubleUp": "szybko rośnie", "SingleUp": "rośnie",
+    "FortyFiveUp": "lekko rośnie", "Flat": "stabilny",
+    "FortyFiveDown": "lekko spada", "SingleDown": "spada",
+    "DoubleDown": "szybko spada", "NotComputable": "nie można obliczyć",
+    "RateOutOfRange": "poza zakresem",
 }
 
 
@@ -72,28 +70,55 @@ class DexcomShareClient:
         self.session_id: str | None = None
 
     async def login(self) -> str:
-        """Loguje się do Dexcom Share API i zwraca session_id."""
-        url = f"{self.base_url}/General/LoginPublisherAccountByName"
-        payload = {
-            "accountName": self.username,
-            "password": self.password,
-            "applicationId": DEXCOM_APPLICATION_ID,
-        }
+        """Loguje się do Dexcom Share API (dwuetapowo) i zwraca session_id."""
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url,
-                json=payload,
+            # Krok 1: uzyskaj accountId
+            auth_url = f"{self.base_url}/General/AuthenticatePublisherAccount"
+            auth_payload = {
+                "accountName": self.username,
+                "password": self.password,
+                "applicationId": DEXCOM_APPLICATION_ID,
+            }
+            r1 = await client.post(
+                auth_url,
+                json=auth_payload,
                 headers={"Content-Type": "application/json"},
                 timeout=15,
             )
-            response.raise_for_status()
-            # API zwraca string w cudzysłowie: "\"abc123\""
+            r1.raise_for_status()
             try:
-                self.session_id = response.json()
+                account_id = r1.json()
             except Exception:
                 raise ValueError(
-                    f"Dexcom login zwrocil nieprawidlowa odpowiedz "
-                    f"(HTTP {response.status_code}): {response.text[:300] or '(pusta odpowiedz)'}"
+                    f"Dexcom AuthenticatePublisherAccount zwrocil nieprawidlowa odpowiedz "
+                    f"(HTTP {r1.status_code}): {r1.text[:300] or '(pusta odpowiedz)'}"
+                )
+            if not isinstance(account_id, str) or account_id == "00000000-0000-0000-0000-000000000000":
+                raise ValueError(
+                    f"Bledne dane logowania lub Share nie jest wlaczone w aplikacji Dexcom. "
+                    f"Odpowiedz API: {account_id}"
+                )
+
+            # Krok 2: uzyskaj sessionId
+            login_url = f"{self.base_url}/General/LoginPublisherAccountById"
+            login_payload = {
+                "accountId": account_id,
+                "password": self.password,
+                "applicationId": DEXCOM_APPLICATION_ID,
+            }
+            r2 = await client.post(
+                login_url,
+                json=login_payload,
+                headers={"Content-Type": "application/json"},
+                timeout=15,
+            )
+            r2.raise_for_status()
+            try:
+                self.session_id = r2.json()
+            except Exception:
+                raise ValueError(
+                    f"Dexcom LoginPublisherAccountById zwrocil nieprawidlowa odpowiedz "
+                    f"(HTTP {r2.status_code}): {r2.text[:300] or '(pusta odpowiedz)'}"
                 )
             if isinstance(self.session_id, str):
                 self.session_id = self.session_id.strip('"')
